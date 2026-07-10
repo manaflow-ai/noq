@@ -2437,7 +2437,9 @@ impl Connection {
     /// Be aware that probing packets, which do not exist in Multipath without QNT, are
     /// exempt from this.
     fn local_ip_may_migrate(&self) -> bool {
-        (self.side.is_client() || self.nat_traversal_is_active()) && self.is_handshake_confirmed()
+        self.nat_traversal_authorized
+            && (self.side.is_client() || self.nat_traversal_is_active())
+            && self.is_handshake_confirmed()
     }
     /// Process timer expirations
     ///
