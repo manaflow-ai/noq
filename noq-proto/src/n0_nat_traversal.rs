@@ -130,6 +130,9 @@ pub enum Error {
     /// Attempted to initiate NAT traversal on a closed, or closing connection.
     #[error("The connection is already closed")]
     Closed,
+    /// NAT traversal is waiting for explicit application authorization.
+    #[error("n0's nat traversal has not been authorized")]
+    NotAuthorized,
 }
 
 /// Event emitted when the client receives ADD_ADDRESS or REMOVE_ADDRESS frames.
@@ -250,6 +253,21 @@ impl State {
                 .keys()
                 .map(CanonicalIpPort::as_canonical_addr)
                 .collect()),
+        }
+    }
+
+    /// Returns `ADD_ADDRESS` frames for all current server-side local candidates.
+    ///
+    /// This is used when deferred NAT traversal is authorized. Client candidates are advertised
+    /// later through `REACH_OUT` frames when a round starts.
+    pub(crate) fn current_add_address_frames(&self) -> Vec<AddAddress> {
+        match self {
+            Self::NotNegotiated | Self::ClientSide(_) => Vec::new(),
+            Self::ServerSide(server_state) => server_state
+                .local_addresses
+                .iter()
+                .map(|(address, seq_no)| AddAddress::new((address.ip(), address.port()), *seq_no))
+                .collect(),
         }
     }
 

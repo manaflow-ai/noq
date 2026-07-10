@@ -477,6 +477,15 @@ impl ConnPairBuilder {
         self
     }
 
+    /// Defers QNT on both endpoints until each connection is explicitly authorized.
+    pub(super) fn defer_nat_traversal(mut self) -> Self {
+        self.server_transport_cfg
+            .defer_nat_traversal_until_authorized(true);
+        self.client_transport_cfg
+            .defer_nat_traversal_until_authorized(true);
+        self
+    }
+
     /// Sets an explicit [`ServerConfig`].
     ///
     /// Note this means the [`Self::server_transport_cfg`] will be unused.
@@ -869,6 +878,18 @@ impl ConnPair {
         address: SocketAddr,
     ) -> Result<(), n0_nat_traversal::Error> {
         self.conn_mut(side).add_nat_traversal_address(address)
+    }
+
+    pub(super) fn authorize_nat_traversal(&mut self, side: Side) {
+        self.conn_mut(side).authorize_nat_traversal();
+    }
+
+    pub(super) fn nat_traversal_probe_timer_is_armed(&self, side: Side) -> bool {
+        self.conn(side).nat_traversal_probe_timer_is_armed()
+    }
+
+    pub(super) fn local_ip_migration_is_allowed(&self, side: Side) -> bool {
+        self.conn(side).local_ip_migration_is_allowed()
     }
 
     pub(super) fn remove_nat_traversal_address(

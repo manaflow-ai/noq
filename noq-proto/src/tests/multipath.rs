@@ -1686,6 +1686,291 @@ fn nat_traversal_revalidates_existing_path() -> TestResult {
     Ok(())
 }
 
+#[test]
+fn deferred_nat_traversal_has_no_pre_authorization_leakage_and_upgrades_after_authorization()
+-> TestResult {
+    let _guard = subscribe();
+    let mut pair = ConnPair::builder()
+        .enable_multipath()
+        .enable_nat_traversal()
+        .defer_nat_traversal()
+        .with_routes(SimpleFirewallRouting::new().into())
+        .connect();
+
+    while pair.poll(Client).is_some() {}
+    while pair.poll(Server).is_some() {}
+
+    let server_addr = SimpleFirewallRouting::SERVER_FW_ADDR;
+    let client_addr = SimpleFirewallRouting::CLIENT_FW_ADDR;
+    let server_frames_before = pair.stats(Server).frame_tx;
+    let client_frames_before = pair.stats(Client).frame_tx;
+
+    pair.add_nat_traversal_address(Server, server_addr)?;
+    pair.add_nat_traversal_address(Client, client_addr)?;
+    assert_eq!(
+        pair.get_local_nat_traversal_addresses(Server)?,
+        [server_addr]
+    );
+    assert_eq!(
+        pair.get_local_nat_traversal_addresses(Client)?,
+        [client_addr]
+    );
+    pair.drive();
+
+    assert!(pair.get_remote_nat_traversal_addresses(Client)?.is_empty());
+    assert_matches!(pair.poll(Client), None);
+    assert_matches!(pair.poll(Server), None);
+    assert_eq!(
+        pair.stats(Server).frame_tx.add_address,
+        server_frames_before.add_address
+    );
+    assert_eq!(
+        pair.stats(Client).frame_tx.reach_out,
+        client_frames_before.reach_out
+    );
+    assert_eq!(
+        pair.stats(Client).frame_tx.path_challenge,
+        client_frames_before.path_challenge
+    );
+    assert_eq!(
+        pair.stats(Server).frame_tx.path_challenge,
+        server_frames_before.path_challenge
+    );
+    assert!(!pair.nat_traversal_probe_timer_is_armed(Client));
+    assert!(!pair.nat_traversal_probe_timer_is_armed(Server));
+    assert!(
+        !pair.local_ip_migration_is_allowed(Client),
+        "a client must not adopt another local interface before admission"
+    );
+    assert!(
+        !pair.local_ip_migration_is_allowed(Server),
+        "a server must not adopt another local interface before admission"
+    );
+    assert_matches!(
+        pair.initiate_nat_traversal_round(Client),
+        Err(n0_nat_traversal::Error::NotAuthorized)
+    );
+    assert!(!pair.nat_traversal_probe_timer_is_armed(Client));
+
+    // The explicitly supplied initial path remains usable for application admission.
+    let stream = pair.streams(Client).open(Dir::Uni).unwrap();
+    pair.send_stream(Client, stream).write(b"admission")?;
+    pair.send_stream(Client, stream).finish()?;
+    pair.drive();
+    assert_matches!(
+        pair.poll(Server),
+        Some(Event::Stream(StreamEvent::Opened { dir: Dir::Uni }))
+    );
+    assert_eq!(pair.streams(Server).accept(Dir::Uni), Some(stream));
+    let mut recv = pair.recv_stream(Server, stream);
+    let mut chunks = recv.read(true)?;
+    assert_matches!(chunks.next(usize::MAX), Ok(Some(chunk)) if chunk.bytes.as_ref() == b"admission");
+    let _ = chunks.finalize();
+    while pair.poll(Client).is_some() {}
+    while pair.poll(Server).is_some() {}
+
+    // Repeated authorization is a no-op and advertises each current candidate once.
+    pair.authorize_nat_traversal(Client);
+    pair.authorize_nat_traversal(Client);
+    assert!(pair.local_ip_migration_is_allowed(Client));
+    assert!(!pair.local_ip_migration_is_allowed(Server));
+    pair.authorize_nat_traversal(Server);
+    pair.authorize_nat_traversal(Server);
+    assert!(pair.local_ip_migration_is_allowed(Server));
+    pair.drive();
+
+    assert_eq!(
+        pair.stats(Server).frame_tx.add_address - server_frames_before.add_address,
+        1
+    );
+    assert_matches!(
+        pair.poll(Client),
+        Some(Event::NatTraversal(
+            n0_nat_traversal::Event::AddressAdded(addr)
+        )) if addr == server_addr
+    );
+    assert_matches!(pair.poll(Client), None);
+    assert_eq!(
+        pair.get_remote_nat_traversal_addresses(Client)?,
+        [server_addr]
+    );
+
+    assert_eq!(pair.initiate_nat_traversal_round(Client)?, [server_addr]);
+    assert!(pair.nat_traversal_probe_timer_is_armed(Client));
+    pair.drive();
+
+    assert!(pair.paths(Client).len() > 1);
+    assert!(pair.paths(Server).len() > 1);
+    assert_eq!(
+        pair.path_status(Client, PathId::ZERO)?,
+        PathStatus::Available
+    );
+    assert!(!pair.is_closed(Client));
+    assert!(!pair.is_closed(Server));
+
+    Ok(())
+}
+
+#[test]
+fn deferred_nat_traversal_blocks_peer_migration_until_authorized() -> TestResult {
+    let _guard = subscribe();
+    let mut pair = ConnPair::builder()
+        .enable_multipath()
+        .enable_nat_traversal()
+        .defer_nat_traversal()
+        .connect();
+    pair.drive();
+
+    let original_client_addr = pair.conn(Server).network_path(PathId::ZERO)?.remote;
+    let migrated_client_addr = pair.routes.as_basic_mut().passive_migration(Client);
+    assert_ne!(migrated_client_addr, original_client_addr);
+
+    let server_challenges_before = pair.stats(Server).frame_tx.path_challenge;
+    pair.ping(Client);
+    pair.drive();
+
+    assert_eq!(
+        pair.conn(Server).network_path(PathId::ZERO)?.remote,
+        original_client_addr,
+        "an unauthorized client must not migrate the server's bootstrap path"
+    );
+    assert_eq!(
+        pair.stats(Server).frame_tx.path_challenge,
+        server_challenges_before,
+        "an unauthorized peer must not trigger off-path validation traffic"
+    );
+
+    pair.authorize_nat_traversal(Client);
+    pair.authorize_nat_traversal(Server);
+    pair.ping(Client);
+    pair.drive();
+
+    assert_eq!(
+        pair.conn(Server).network_path(PathId::ZERO)?.remote,
+        migrated_client_addr,
+        "the same migration must succeed after exact-connection authorization"
+    );
+    assert!(
+        pair.stats(Server).frame_tx.path_challenge > server_challenges_before,
+        "authorized migration must validate the new path"
+    );
+    assert!(!pair.is_closed(Client));
+    assert!(!pair.is_closed(Server));
+
+    Ok(())
+}
+
+#[test]
+fn deferred_nat_traversal_drops_pre_authorization_frames_instead_of_replaying_them() -> TestResult {
+    let _guard = subscribe();
+
+    // A non-deferred server advertises before its deferred client authorizes QNT.
+    let mut add_address_builder = ConnPair::builder()
+        .enable_multipath()
+        .enable_nat_traversal();
+    add_address_builder
+        .client_transport_cfg
+        .defer_nat_traversal_until_authorized(true);
+    let mut add_address_pair = add_address_builder.connect();
+    while add_address_pair.poll(Client).is_some() {}
+    while add_address_pair.poll(Server).is_some() {}
+
+    let stale_server_addr: SocketAddr = "127.0.0.1:32001".parse()?;
+    let fresh_server_addr: SocketAddr = "127.0.0.1:32002".parse()?;
+    let client_rx_before = add_address_pair.stats(Client).frame_rx;
+    add_address_pair.add_nat_traversal_address(Server, stale_server_addr)?;
+    add_address_pair.drive_server();
+    add_address_pair.drive_client();
+    // Drop the ACK so the pre-authorization ADD_ADDRESS is retransmitted after authorization.
+    add_address_pair.server.inbound.clear();
+    add_address_pair.remove_nat_traversal_address(Server, stale_server_addr)?;
+    add_address_pair.drive_server();
+    add_address_pair.drive_client();
+    // REMOVE_ADDRESS is also dropped and tombstoned without exposing its sequence.
+    add_address_pair.server.inbound.clear();
+
+    assert!(
+        add_address_pair
+            .get_remote_nat_traversal_addresses(Client)?
+            .is_empty()
+    );
+    assert_eq!(
+        add_address_pair.stats(Client).frame_rx.add_address,
+        client_rx_before.add_address
+    );
+    assert_eq!(
+        add_address_pair.stats(Client).frame_rx.remove_address,
+        client_rx_before.remove_address
+    );
+    assert_matches!(add_address_pair.poll(Client), None);
+
+    add_address_pair.authorize_nat_traversal(Client);
+    add_address_pair.drive();
+    assert!(
+        add_address_pair
+            .get_remote_nat_traversal_addresses(Client)?
+            .is_empty(),
+        "the ignored pre-authorization candidate must not reappear"
+    );
+    assert_matches!(add_address_pair.poll(Client), None);
+
+    add_address_pair.add_nat_traversal_address(Server, fresh_server_addr)?;
+    add_address_pair.drive();
+    assert_eq!(
+        add_address_pair.get_remote_nat_traversal_addresses(Client)?,
+        [fresh_server_addr]
+    );
+    assert_matches!(
+        add_address_pair.poll(Client),
+        Some(Event::NatTraversal(
+            n0_nat_traversal::Event::AddressAdded(addr)
+        )) if addr == fresh_server_addr
+    );
+
+    // A non-deferred client sends REACH_OUT before its deferred server authorizes QNT.
+    let mut reach_out_builder = ConnPair::builder()
+        .enable_multipath()
+        .enable_nat_traversal();
+    reach_out_builder
+        .server_transport_cfg
+        .defer_nat_traversal_until_authorized(true);
+    let mut reach_out_pair = reach_out_builder.connect();
+    while reach_out_pair.poll(Client).is_some() {}
+    while reach_out_pair.poll(Server).is_some() {}
+
+    let client_addr: SocketAddr = "127.0.0.1:32003".parse()?;
+    let server_rx_before = reach_out_pair.stats(Server).frame_rx;
+    let server_tx_before = reach_out_pair.stats(Server).frame_tx;
+    reach_out_pair.add_nat_traversal_address(Client, client_addr)?;
+    assert!(
+        reach_out_pair
+            .initiate_nat_traversal_round(Client)?
+            .is_empty()
+    );
+    reach_out_pair.drive();
+
+    assert_eq!(
+        reach_out_pair.stats(Server).frame_rx.reach_out,
+        server_rx_before.reach_out
+    );
+    assert_eq!(
+        reach_out_pair.stats(Server).frame_tx.path_challenge,
+        server_tx_before.path_challenge
+    );
+    assert!(!reach_out_pair.nat_traversal_probe_timer_is_armed(Server));
+
+    reach_out_pair.authorize_nat_traversal(Server);
+    reach_out_pair.drive();
+    assert_eq!(
+        reach_out_pair.stats(Server).frame_tx.path_challenge,
+        server_tx_before.path_challenge,
+        "the ignored REACH_OUT must not schedule a probe after authorization"
+    );
+    assert!(!reach_out_pair.nat_traversal_probe_timer_is_armed(Server));
+
+    Ok(())
+}
+
 /// After a silent gap, PTO backs off exponentially and can reach minutes.
 /// The 2s PTO cap ensures recovery happens promptly once connectivity returns.
 #[test]
