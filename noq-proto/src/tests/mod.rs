@@ -1466,6 +1466,40 @@ fn server_hs_retransmit() {
 }
 
 #[test]
+fn deferred_nat_traversal_allows_authenticated_server_handshake_migration() {
+    let _guard = subscribe();
+    let mut transport = TransportConfig::default();
+    transport.defer_nat_traversal_until_authorized(true);
+    transport.server_handshake_migration(true);
+    let (mut pair, client_config) = ConnPair::builder()
+        .with_transport_cfg(transport)
+        .build_pair();
+
+    let client_ch = pair.begin_connect(client_config);
+    pair.drive_client();
+    let migrated_server_addr = pair.routes.as_basic_mut().passive_migration(Server);
+    pair.drive_server();
+    pair.drive_client();
+
+    assert_matches!(
+        pair.client_conn_mut(client_ch).poll(),
+        Some(Event::HandshakeDataReady)
+    );
+    assert_matches!(
+        pair.client_conn_mut(client_ch).poll(),
+        Some(Event::Connected)
+    );
+    assert_eq!(
+        pair.client_conn_mut(client_ch)
+            .network_path(PathId::ZERO)
+            .expect("initial path remains open")
+            .remote,
+        migrated_server_addr,
+        "an authenticated handshake response may select its bootstrap path"
+    );
+}
+
+#[test]
 fn migration() {
     let _guard = subscribe();
     let mut pair = Pair::default();

@@ -406,9 +406,7 @@ impl Connection {
             remote_cid_set: side.is_server(),
             expected_token: Bytes::new(),
             client_hello: None,
-            allow_server_migration: side.is_client()
-                && config.server_handshake_migration
-                && nat_traversal_authorized,
+            allow_server_migration: side.is_client() && config.server_handshake_migration,
         });
         let local_cid_state = FxHashMap::from_iter([(
             PathId::ZERO,
@@ -2391,19 +2389,19 @@ impl Connection {
     //    not yet recognised and will end up being discarded because of this.
     //    See https://github.com/n0-computer/noq/issues/607.
     fn peer_may_probe(&self) -> bool {
-        if !self.nat_traversal_authorized {
-            return false;
-        }
         match &self.side {
             ConnectionSide::Client { .. } => {
                 if let Some(hs) = self.state.as_handshake() {
                     hs.allow_server_migration
                 } else {
-                    self.nat_traversal_is_active() && self.is_handshake_confirmed()
+                    self.nat_traversal_authorized
+                        && self.nat_traversal_is_active()
+                        && self.is_handshake_confirmed()
                 }
             }
             ConnectionSide::Server { server_config } => {
-                self.is_handshake_confirmed()
+                self.nat_traversal_authorized
+                    && self.is_handshake_confirmed()
                     && (server_config.migration || self.nat_traversal_is_active())
             }
         }
@@ -4702,8 +4700,7 @@ impl Connection {
                     expected_token: Bytes::new(),
                     remote_cid_set: false,
                     client_hello: None,
-                    allow_server_migration: self.config.server_handshake_migration
-                        && self.nat_traversal_authorized,
+                    allow_server_migration: self.config.server_handshake_migration,
                 });
                 Ok(())
             }
