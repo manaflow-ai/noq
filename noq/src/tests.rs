@@ -1616,6 +1616,81 @@ async fn nat_traversal_wakes_connection_driver() -> TestResult {
 }
 
 #[tokio::test]
+async fn deferred_nat_traversal_resumes_once_after_connection_authorization() -> TestResult {
+    let _logging = subscribe();
+    let factory = EndpointFactory::new();
+
+    let mut transport_config = TransportConfig::default();
+    transport_config.max_concurrent_multipath_paths(3);
+    transport_config.max_remote_nat_traversal_addresses(10);
+    transport_config.defer_nat_traversal_until_authorized(true);
+    let server = factory.endpoint_with_config("server", transport_config.clone());
+    let server_addr = server.local_addr()?;
+    let client = factory.endpoint_with_config("client", transport_config);
+    let (server_conn_tx, server_conn_rx) = tokio::sync::oneshot::channel();
+
+    let server_task = async move {
+        let conn = server.accept().await.unwrap().await.unwrap();
+        server_conn_tx.send(conn.clone()).unwrap();
+        conn.closed().await;
+    }
+    .instrument(info_span!("server"));
+
+    let client_task = async move {
+        let conn = client.connect(server_addr, "localhost")?.await?;
+        let server_conn = server_conn_rx.await?;
+        let client_addr = client.local_addr()?;
+        let mut updates = conn.nat_traversal_updates();
+
+        server_conn.add_nat_traversal_address(server_addr)?;
+        conn.add_nat_traversal_address(client_addr)?;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        assert!(conn.get_remote_nat_traversal_addresses()?.is_empty());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(25), updates.next())
+                .await
+                .is_err()
+        );
+        assert!(matches!(
+            conn.initiate_nat_traversal_round(),
+            Err(proto::n0_nat_traversal::Error::NotAuthorized)
+        ));
+
+        let add_address_before = server_conn.stats().frame_tx.add_address;
+        conn.authorize_nat_traversal();
+        conn.authorize_nat_traversal();
+        server_conn.authorize_nat_traversal();
+        server_conn.authorize_nat_traversal();
+
+        tokio::time::timeout(Duration::from_millis(500), async {
+            loop {
+                if conn
+                    .get_remote_nat_traversal_addresses()
+                    .is_ok_and(|addrs| addrs == [server_addr])
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await?;
+        assert_eq!(
+            server_conn.stats().frame_tx.add_address - add_address_before,
+            1
+        );
+
+        conn.close(0u8.into(), b"done");
+        TestResult::Ok(())
+    }
+    .instrument(info_span!("client"));
+
+    let ((), client_result) = tokio::join!(server_task, client_task);
+    client_result?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn stream_drop_removes_blocked_reader() {
     let _guard = subscribe();
 

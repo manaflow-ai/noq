@@ -67,6 +67,7 @@ pub struct TransportConfig {
     pub(crate) default_path_keep_alive_interval: Option<Duration>,
 
     pub(crate) max_remote_nat_traversal_addresses: Option<NonZeroU8>,
+    pub(crate) defer_nat_traversal_until_authorized: bool,
     pub(crate) server_handshake_migration: bool,
 
     #[cfg(feature = "qlog")]
@@ -457,6 +458,21 @@ impl TransportConfig {
         self
     }
 
+    /// Defers n0 NAT traversal until it is explicitly authorized on each connection.
+    ///
+    /// The NAT traversal transport parameter is still negotiated normally. While deferred,
+    /// candidate address frames are ignored, local candidates are not advertised, and no NAT
+    /// traversal probes are sent. Call [`Connection::authorize_nat_traversal`] after the peer has
+    /// been authenticated to resume NAT traversal on that connection.
+    ///
+    /// Defaults to `false` to preserve the standard noq behavior.
+    ///
+    /// [`Connection::authorize_nat_traversal`]: crate::Connection::authorize_nat_traversal
+    pub fn defer_nat_traversal_until_authorized(&mut self, defer: bool) -> &mut Self {
+        self.defer_nat_traversal_until_authorized = defer;
+        self
+    }
+
     /// Sets whether the server is allowed to migrate once during the handshake.
     ///
     /// **Enabling this is not RFC9000 compliant.**
@@ -591,6 +607,7 @@ impl Default for TransportConfig {
 
             // nat traversal disabled by default
             max_remote_nat_traversal_addresses: None,
+            defer_nat_traversal_until_authorized: false,
             server_handshake_migration: false,
 
             #[cfg(feature = "qlog")]
@@ -633,6 +650,7 @@ impl fmt::Debug for TransportConfig {
             default_path_max_idle_timeout,
             default_path_keep_alive_interval,
             max_remote_nat_traversal_addresses,
+            defer_nat_traversal_until_authorized,
             server_handshake_migration,
             #[cfg(feature = "qlog")]
             qlog_factory,
@@ -685,6 +703,10 @@ impl fmt::Debug for TransportConfig {
             .field(
                 "max_remote_nat_traversal_addresses",
                 max_remote_nat_traversal_addresses,
+            )
+            .field(
+                "defer_nat_traversal_until_authorized",
+                defer_nat_traversal_until_authorized,
             )
             .field("server_handshake_migration", server_handshake_migration);
         #[cfg(feature = "qlog")]

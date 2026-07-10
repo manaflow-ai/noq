@@ -852,6 +852,16 @@ impl Connection {
         conn.inner.is_multipath_negotiated()
     }
 
+    /// Authorizes n0 NAT traversal on this connection.
+    ///
+    /// This is a one-way, idempotent operation. It resumes candidate exchange and probing when
+    /// [`TransportConfig::defer_nat_traversal_until_authorized`](crate::TransportConfig::defer_nat_traversal_until_authorized)
+    /// was enabled. Calling it for a connection that was not deferred has no effect.
+    pub fn authorize_nat_traversal(&self) {
+        let mut conn = self.0.lock_and_wake("authorize_nat_traversal");
+        conn.inner.authorize_nat_traversal();
+    }
+
     /// Registers one address at which this endpoint might be reachable
     ///
     /// When the NAT traversal extension is negotiated, servers send these addresses to clients in

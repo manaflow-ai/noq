@@ -853,6 +853,37 @@ mod test {
     }
 
     #[test]
+    fn nat_traversal_authorization_deferral_is_not_a_transport_parameter() {
+        fn encode(config: &TransportConfig) -> Vec<u8> {
+            let mut rng = StepRng(7);
+            let params = TransportParameters::new(
+                config,
+                &EndpointConfig::default(),
+                &crate::RandomConnectionIdGenerator::default(),
+                ConnectionId::new(&[1, 2, 3, 4]),
+                None,
+                &mut rng,
+            );
+            let mut encoded = Vec::new();
+            params.write(&mut encoded);
+            encoded
+        }
+
+        let mut default_behavior = TransportConfig::default();
+        default_behavior.max_remote_nat_traversal_addresses(8);
+
+        let mut explicit_default = default_behavior.clone();
+        explicit_default.defer_nat_traversal_until_authorized(false);
+
+        let mut deferred = default_behavior.clone();
+        deferred.defer_nat_traversal_until_authorized(true);
+
+        let baseline = encode(&default_behavior);
+        assert_eq!(encode(&explicit_default), baseline);
+        assert_eq!(encode(&deferred), baseline);
+    }
+
+    #[test]
     fn reserved_transport_parameter_generate_reserved_id() {
         let mut rngs = [
             StepRng(0),

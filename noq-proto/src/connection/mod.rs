@@ -1,6 +1,6 @@
 use std::{
     cmp,
-    collections::{BTreeMap, VecDeque, btree_map},
+    collections::{BTreeMap, BTreeSet, VecDeque, btree_map},
     convert::TryFrom,
     fmt, io, mem,
     net::SocketAddr,
@@ -309,7 +309,65 @@ pub struct Connection {
 
     /// State for n0's (<https://n0.computer>) nat traversal protocol.
     n0_nat_traversal: n0_nat_traversal::State,
+    /// Whether application admission has authorized NAT traversal on this connection.
+    nat_traversal_authorized: bool,
+    /// Non-address metadata for QNT frames discarded before authorization.
+    deferred_nat_traversal_frames: DeferredNatTraversalFrames,
     qlog: QlogSink,
+}
+
+#[derive(Debug, Default)]
+struct DeferredNatTraversalFrames {
+    address_sequence_ids: BTreeSet<VarInt>,
+    latest_reach_out_round: Option<VarInt>,
+    address_sequence_overflow: bool,
+}
+
+impl DeferredNatTraversalFrames {
+    fn record(&mut self, frame: &Frame, max_address_ids: usize) {
+        match frame {
+            Frame::AddAddress(frame) => self.record_address_sequence(frame.seq_no, max_address_ids),
+            Frame::RemoveAddress(frame) => {
+                self.record_address_sequence(frame.seq_no, max_address_ids)
+            }
+            Frame::ReachOut(frame) => {
+                self.latest_reach_out_round = Some(
+                    self.latest_reach_out_round
+                        .map_or(frame.round, |round| round.max(frame.round)),
+                );
+            }
+            _ => {}
+        }
+    }
+
+    fn record_address_sequence(&mut self, sequence: VarInt, max_address_ids: usize) {
+        if self.address_sequence_overflow || self.address_sequence_ids.contains(&sequence) {
+            return;
+        }
+        if self.address_sequence_ids.len() >= max_address_ids {
+            // A peer exceeded the negotiated candidate bound before admission. Fail closed for
+            // address advertisements on this connection without retaining unbounded metadata.
+            self.address_sequence_overflow = true;
+            self.address_sequence_ids.clear();
+            return;
+        }
+        self.address_sequence_ids.insert(sequence);
+    }
+
+    fn should_ignore_after_authorization(&self, frame: &Frame) -> bool {
+        match frame {
+            Frame::AddAddress(frame) => {
+                self.address_sequence_overflow || self.address_sequence_ids.contains(&frame.seq_no)
+            }
+            Frame::RemoveAddress(frame) => {
+                self.address_sequence_overflow || self.address_sequence_ids.contains(&frame.seq_no)
+            }
+            Frame::ReachOut(frame) => self
+                .latest_reach_out_round
+                .is_some_and(|round| frame.round <= round),
+            _ => false,
+        }
+    }
 }
 
 impl Connection {
@@ -361,6 +419,7 @@ impl Connection {
 
         let mut path = PathData::new(network_path, allow_mtud, None, 0, now, &config);
         path.open_status = paths::OpenStatus::Informed;
+        let nat_traversal_authorized = !config.defer_nat_traversal_until_authorized;
         let mut this = Self {
             endpoint_config,
             crypto_state: CryptoState::new(crypto, init_cid, side, &mut rng),
@@ -429,6 +488,8 @@ impl Connection {
             abandoned_paths: Default::default(),
 
             n0_nat_traversal: Default::default(),
+            nat_traversal_authorized,
+            deferred_nat_traversal_frames: Default::default(),
             qlog,
         };
         if path_validated {
@@ -2034,6 +2095,7 @@ impl Connection {
         if self
             .find_validated_path_on_network_path(network_path)
             .is_none()
+            && self.nat_traversal_authorized
             && self.n0_nat_traversal.client_side().is_ok()
         {
             let token = self.rng.random();
@@ -2073,6 +2135,9 @@ impl Connection {
         buf: &mut Vec<u8>,
         path_id: PathId,
     ) -> Option<Transmit> {
+        if !self.nat_traversal_authorized {
+            return None;
+        }
         let remote = self.n0_nat_traversal.next_probe_addr()?;
 
         if !self.paths.get(&path_id)?.data.validated {
@@ -2329,12 +2394,12 @@ impl Connection {
                 if let Some(hs) = self.state.as_handshake() {
                     hs.allow_server_migration
                 } else {
-                    self.n0_nat_traversal.is_negotiated() && self.is_handshake_confirmed()
+                    self.nat_traversal_is_active() && self.is_handshake_confirmed()
                 }
             }
             ConnectionSide::Server { server_config } => {
                 self.is_handshake_confirmed()
-                    && (server_config.migration || self.n0_nat_traversal.is_negotiated())
+                    && (server_config.migration || self.nat_traversal_is_active())
             }
         }
     }
@@ -2372,8 +2437,7 @@ impl Connection {
     /// Be aware that probing packets, which do not exist in Multipath without QNT, are
     /// exempt from this.
     fn local_ip_may_migrate(&self) -> bool {
-        (self.side.is_client() || self.n0_nat_traversal.is_negotiated())
-            && self.is_handshake_confirmed()
+        (self.side.is_client() || self.nat_traversal_is_active()) && self.is_handshake_confirmed()
     }
     /// Process timer expirations
     ///
@@ -2462,6 +2526,9 @@ impl Connection {
                         }
                     }
                     ConnTimer::NatTraversalProbeRetry => {
+                        if !self.nat_traversal_authorized {
+                            continue;
+                        }
                         self.n0_nat_traversal.queue_retries(self.is_ipv6());
                         if let Some(delay) =
                             self.n0_nat_traversal.retry_delay(self.config.initial_rtt)
@@ -4891,6 +4958,31 @@ impl Connection {
         let mut migration_observed_addr = None;
         for result in frame::Iter::new(payload)? {
             let frame = result?;
+            let is_nat_traversal_frame = matches!(
+                &frame,
+                Frame::AddAddress(_) | Frame::RemoveAddress(_) | Frame::ReachOut(_)
+            );
+            if !self.nat_traversal_authorized && is_nat_traversal_frame {
+                // Do not retain, log, emit events for, or otherwise act on pre-authorization QNT
+                // frames. Only bounded sequence/round tombstones are retained so retransmissions
+                // cannot make stale frames take effect after authorization.
+                let max_address_ids = self
+                    .config
+                    .max_remote_nat_traversal_addresses
+                    .map_or(0, |max| usize::from(max.get()));
+                self.deferred_nat_traversal_frames
+                    .record(&frame, max_address_ids);
+                ack_eliciting |= frame.is_ack_eliciting();
+                continue;
+            }
+            if is_nat_traversal_frame
+                && self
+                    .deferred_nat_traversal_frames
+                    .should_ignore_after_authorization(&frame)
+            {
+                ack_eliciting |= frame.is_ack_eliciting();
+                continue;
+            }
             qlog.frame(&frame);
             let span = match frame {
                 Frame::Padding => continue,
@@ -7113,12 +7205,44 @@ impl Connection {
             .any(|p| p.data.network_path.remote.is_ipv6())
     }
 
+    /// Returns whether negotiated NAT traversal is currently authorized.
+    fn nat_traversal_is_active(&self) -> bool {
+        self.nat_traversal_authorized && self.n0_nat_traversal.is_negotiated()
+    }
+
+    /// Authorizes n0 NAT traversal on this connection.
+    ///
+    /// This is a one-way, idempotent operation. It has no effect unless
+    /// [`TransportConfig::defer_nat_traversal_until_authorized`] was enabled. Current server-side
+    /// local candidates are advertised after authorization; client-side local candidates are
+    /// advertised when the next NAT traversal round starts.
+    pub fn authorize_nat_traversal(&mut self) {
+        if self.nat_traversal_authorized {
+            return;
+        }
+
+        self.nat_traversal_authorized = true;
+        self.spaces[SpaceId::Data]
+            .pending
+            .add_address
+            .extend(self.n0_nat_traversal.current_add_address_frames());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn nat_traversal_probe_timer_is_armed(&self) -> bool {
+        self.timers
+            .get(Timer::Conn(ConnTimer::NatTraversalProbeRetry))
+            .is_some()
+    }
+
     /// Add addresses the local endpoint considers are reachable for nat traversal.
     pub fn add_nat_traversal_address(
         &mut self,
         address: SocketAddr,
     ) -> Result<(), n0_nat_traversal::Error> {
-        if let Some(added) = self.n0_nat_traversal.add_local_address(address)? {
+        if let Some(added) = self.n0_nat_traversal.add_local_address(address)?
+            && self.nat_traversal_authorized
+        {
             self.spaces[SpaceId::Data].pending.add_address.insert(added);
         };
         Ok(())
@@ -7131,7 +7255,9 @@ impl Connection {
         &mut self,
         address: SocketAddr,
     ) -> Result<(), n0_nat_traversal::Error> {
-        if let Some(removed) = self.n0_nat_traversal.remove_local_address(address)? {
+        if let Some(removed) = self.n0_nat_traversal.remove_local_address(address)?
+            && self.nat_traversal_authorized
+        {
             self.spaces[SpaceId::Data]
                 .pending
                 .remove_address
@@ -7151,6 +7277,10 @@ impl Connection {
     pub fn get_remote_nat_traversal_addresses(
         &self,
     ) -> Result<Vec<SocketAddr>, n0_nat_traversal::Error> {
+        if !self.nat_traversal_authorized {
+            self.n0_nat_traversal.client_side()?;
+            return Ok(Vec::new());
+        }
         Ok(self
             .n0_nat_traversal
             .client_side()?
@@ -7174,6 +7304,9 @@ impl Connection {
     ) -> Result<Vec<SocketAddr>, n0_nat_traversal::Error> {
         if self.state.is_closed() {
             return Err(n0_nat_traversal::Error::Closed);
+        }
+        if !self.nat_traversal_authorized {
+            return Err(n0_nat_traversal::Error::NotAuthorized);
         }
 
         let ipv6 = self.is_ipv6();
