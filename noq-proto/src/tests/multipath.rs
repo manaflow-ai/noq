@@ -1812,6 +1812,55 @@ fn deferred_nat_traversal_has_no_pre_authorization_leakage_and_upgrades_after_au
 }
 
 #[test]
+fn deferred_nat_traversal_blocks_peer_migration_until_authorized() -> TestResult {
+    let _guard = subscribe();
+    let mut pair = ConnPair::builder()
+        .enable_multipath()
+        .enable_nat_traversal()
+        .defer_nat_traversal()
+        .connect();
+    pair.drive();
+
+    let original_client_addr = pair.conn(Server).network_path(PathId::ZERO)?.remote;
+    let migrated_client_addr = pair.routes.as_basic_mut().passive_migration(Client);
+    assert_ne!(migrated_client_addr, original_client_addr);
+
+    let server_challenges_before = pair.stats(Server).frame_tx.path_challenge;
+    pair.ping(Client);
+    pair.drive();
+
+    assert_eq!(
+        pair.conn(Server).network_path(PathId::ZERO)?.remote,
+        original_client_addr,
+        "an unauthorized client must not migrate the server's bootstrap path"
+    );
+    assert_eq!(
+        pair.stats(Server).frame_tx.path_challenge,
+        server_challenges_before,
+        "an unauthorized peer must not trigger off-path validation traffic"
+    );
+
+    pair.authorize_nat_traversal(Client);
+    pair.authorize_nat_traversal(Server);
+    pair.ping(Client);
+    pair.drive();
+
+    assert_eq!(
+        pair.conn(Server).network_path(PathId::ZERO)?.remote,
+        migrated_client_addr,
+        "the same migration must succeed after exact-connection authorization"
+    );
+    assert!(
+        pair.stats(Server).frame_tx.path_challenge > server_challenges_before,
+        "authorized migration must validate the new path"
+    );
+    assert!(!pair.is_closed(Client));
+    assert!(!pair.is_closed(Server));
+
+    Ok(())
+}
+
+#[test]
 fn deferred_nat_traversal_drops_pre_authorization_frames_instead_of_replaying_them() -> TestResult {
     let _guard = subscribe();
 
