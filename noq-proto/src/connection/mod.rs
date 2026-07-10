@@ -402,11 +402,14 @@ impl Connection {
         handshake_space.for_path(PathId::ZERO).open_status = OpenStatus::Informed;
         data_space.for_path(PathId::ZERO).open_status = OpenStatus::Informed;
 
+        let nat_traversal_authorized = !config.defer_nat_traversal_until_authorized;
         let state = State::handshake(state::Handshake {
             remote_cid_set: side.is_server(),
             expected_token: Bytes::new(),
             client_hello: None,
-            allow_server_migration: side.is_client() && config.server_handshake_migration,
+            allow_server_migration: side.is_client()
+                && config.server_handshake_migration
+                && nat_traversal_authorized,
         });
         let local_cid_state = FxHashMap::from_iter([(
             PathId::ZERO,
@@ -418,7 +421,6 @@ impl Connection {
             ),
         )]);
 
-        let nat_traversal_authorized = !config.defer_nat_traversal_until_authorized;
         let mut this = Self {
             endpoint_config,
             crypto_state: CryptoState::new(crypto, init_cid, side, &mut rng),
@@ -2455,6 +2457,9 @@ impl Connection {
     //    not yet recognised and will end up being discarded because of this.
     //    See https://github.com/n0-computer/noq/issues/607.
     fn peer_may_probe(&self) -> bool {
+        if !self.nat_traversal_authorized {
+            return false;
+        }
         match &self.side {
             ConnectionSide::Client { .. } => {
                 if let Some(hs) = self.state.as_handshake() {
@@ -2482,6 +2487,9 @@ impl Connection {
     /// [`state::Handshake::allow_server_migration`] is enabled, but that is handled earlier
     /// in [`Self::handle_packet`] and without probing the current and previous paths.
     fn peer_may_migrate(&self) -> bool {
+        if !self.nat_traversal_authorized {
+            return false;
+        }
         match &self.side {
             ConnectionSide::Server { server_config } => {
                 server_config.migration && self.is_handshake_confirmed()
@@ -4728,7 +4736,8 @@ impl Connection {
                     expected_token: Bytes::new(),
                     remote_cid_set: false,
                     client_hello: None,
-                    allow_server_migration: self.config.server_handshake_migration,
+                    allow_server_migration: self.config.server_handshake_migration
+                        && self.nat_traversal_authorized,
                 });
                 Ok(())
             }
