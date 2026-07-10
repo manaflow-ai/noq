@@ -7235,6 +7235,11 @@ impl Connection {
             .is_some()
     }
 
+    #[cfg(test)]
+    pub(crate) fn local_ip_migration_is_allowed(&self) -> bool {
+        self.local_ip_may_migrate()
+    }
+
     /// Add addresses the local endpoint considers are reachable for nat traversal.
     pub fn add_nat_traversal_address(
         &mut self,

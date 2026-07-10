@@ -888,6 +888,10 @@ impl ConnPair {
         self.conn(side).nat_traversal_probe_timer_is_armed()
     }
 
+    pub(super) fn local_ip_migration_is_allowed(&self, side: Side) -> bool {
+        self.conn(side).local_ip_migration_is_allowed()
+    }
+
     pub(super) fn remove_nat_traversal_address(
         &mut self,
         side: Side,

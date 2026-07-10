@@ -1738,6 +1738,14 @@ fn deferred_nat_traversal_has_no_pre_authorization_leakage_and_upgrades_after_au
     );
     assert!(!pair.nat_traversal_probe_timer_is_armed(Client));
     assert!(!pair.nat_traversal_probe_timer_is_armed(Server));
+    assert!(
+        !pair.local_ip_migration_is_allowed(Client),
+        "a client must not adopt another local interface before admission"
+    );
+    assert!(
+        !pair.local_ip_migration_is_allowed(Server),
+        "a server must not adopt another local interface before admission"
+    );
     assert_matches!(
         pair.initiate_nat_traversal_round(Client),
         Err(n0_nat_traversal::Error::NotAuthorized)
@@ -1764,8 +1772,11 @@ fn deferred_nat_traversal_has_no_pre_authorization_leakage_and_upgrades_after_au
     // Repeated authorization is a no-op and advertises each current candidate once.
     pair.authorize_nat_traversal(Client);
     pair.authorize_nat_traversal(Client);
+    assert!(pair.local_ip_migration_is_allowed(Client));
+    assert!(!pair.local_ip_migration_is_allowed(Server));
     pair.authorize_nat_traversal(Server);
     pair.authorize_nat_traversal(Server);
+    assert!(pair.local_ip_migration_is_allowed(Server));
     pair.drive();
 
     assert_eq!(
