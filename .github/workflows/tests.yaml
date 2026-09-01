@@ -284,6 +284,11 @@ jobs:
 
       - name: Cache Strawberry Perl
         id: cache-perl
+        # External target jobs must not write a shared base-branch cache.
+        if: >-
+          github.event_name != 'merge_group' &&
+          ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+            (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: C:\Strawberry
@@ -307,6 +312,11 @@ jobs:
       # Install LLVM for libclang (required by bindgen for aws-lc-fips-sys)
       - name: Cache LLVM
         id: cache-llvm
+        # External target jobs must not write a shared base-branch cache.
+        if: >-
+          github.event_name != 'merge_group' &&
+          ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+            (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: C:\Program Files\LLVM
@@ -354,6 +364,11 @@ jobs:
 
       - name: Cache cargo-make
         id: cache-cargo-make
+        # External target jobs must not write a shared base-branch cache.
+        if: >-
+          github.event_name != 'merge_group' &&
+          ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+            (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ~/.cargo/bin/cargo-make.exe
@@ -473,6 +488,11 @@ jobs:
 
       - name: Cache Strawberry Perl
         id: cache-perl
+        # External target jobs must not write a shared base-branch cache.
+        if: >-
+          github.event_name != 'merge_group' &&
+          ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+            (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: C:\Strawberry
@@ -498,6 +518,11 @@ jobs:
       # Install LLVM for libclang (required by bindgen for aws-lc-fips-sys)
       - name: Cache LLVM
         id: cache-llvm
+        # External target jobs must not write a shared base-branch cache.
+        if: >-
+          github.event_name != 'merge_group' &&
+          ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+            (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: C:\Program Files\LLVM
