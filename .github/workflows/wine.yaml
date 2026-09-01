@@ -1,21 +1,27 @@
 name: Wine Tests
 
 on:
+  # Pull-request checks use a fresh hosted runner and PR cache scope. The
+  # target event below is the base-controlled lane for trusted PRs.
+  pull_request:
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
-  # Keep the workflow definition on the base branch before using a persistent
-  # self-hosted runner.
   pull_request_target:
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 concurrency:
-  group: wine-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: wine-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   RUSTFLAGS: -Dwarnings
+  PR_REPOSITORY: ${{ github.repository }}
+  PR_REF: ${{ (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.sha }}
+  ALLOW_UNSAFE_PR_CHECKOUT: 'false'
 
 permissions:
   contents: read
@@ -26,14 +32,19 @@ jobs:
     if: >-
       github.repository == 'manaflow-ai/noq' &&
       github.event_name != 'merge_group' &&
-      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
-    runs-on: [self-hosted, linux, X64]
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+    runs-on: >-
+      ${{
+        github.event_name == 'pull_request' && 'ubuntu-latest' ||
+        fromJSON('["self-hosted","linux","X64"]')
+      }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          repository: ${{ env.PR_REPOSITORY }}
+          ref: ${{ env.PR_REF }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ env.ALLOW_UNSAFE_PR_CHECKOUT }}
 
       - name: Install Wine
         run: |

@@ -1,16 +1,19 @@
 name: iroh-patchbay
 
 on:
-  # Keep the workflow definition on the base branch before using a persistent
-  # self-hosted runner.
+  # Pull-request checks run on a hosted runner with the PR cache scope. The
+  # target trigger below is the base-controlled lane for trusted PRs.
+  pull_request:
+    types: [opened, synchronize, reopened]
   pull_request_target:
+    types: [opened, synchronize, reopened]
   merge_group:
   push:
     branches:
       - main
 
 concurrency:
-  group: iroh-patchbay-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: iroh-patchbay-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -18,6 +21,9 @@ env:
   SCCACHE_CACHE_SIZE: "10G"
   IROH_FORCE_STAGING_RELAYS: "1"
   NEXTEST_VERSION: "0.9.80"
+  PR_REPOSITORY: ${{ github.repository }}
+  PR_REF: ${{ (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.sha }}
+  ALLOW_UNSAFE_PR_CHECKOUT: 'false'
 
 permissions:
   contents: read
@@ -29,8 +35,12 @@ jobs:
     if: >-
       github.repository == 'manaflow-ai/noq' &&
       github.event_name != 'merge_group' &&
-      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
-    runs-on: [self-hosted, linux, X64]
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+    runs-on: >-
+      ${{
+        github.event_name == 'pull_request' && 'ubuntu-latest' ||
+        fromJSON('["self-hosted","linux","X64"]')
+      }}
     env:
       RUSTC_WRAPPER: "sccache"
     steps:
@@ -41,9 +51,10 @@ jobs:
       - name: Checkout noq
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          repository: ${{ env.PR_REPOSITORY }}
+          ref: ${{ env.PR_REF }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ env.ALLOW_UNSAFE_PR_CHECKOUT }}
           path: noq
 
       - name: Checkout iroh

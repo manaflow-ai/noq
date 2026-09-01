@@ -1,8 +1,12 @@
 name: CI
 
 on:
-  # Use the base-branch workflow for PRs. This prevents a fork from changing
-  # runner or permission policy in the workflow it asks us to execute.
+  # Keep required checks on the PR merge commit and the PR cache scope. The
+  # target trigger below is a separate, base-controlled lane for trusted jobs.
+  pull_request:
+    types: ["labeled", "unlabeled", "opened", "synchronize", "reopened"]
+  # The target workflow is used only for trusted same-repository jobs. Every
+  # target code job rejects forks and Dependabot before checkout.
   pull_request_target:
     types: ["labeled", "unlabeled", "opened", "synchronize", "reopened"]
   merge_group:
@@ -18,7 +22,9 @@ permissions:
 # treats Dependabot pull requests as forked, so the same policy applies.
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Keep pull_request and pull_request_target runs independent. Otherwise a
+  # skipped target run can cancel the required pull_request check.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -37,19 +43,28 @@ env:
         (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
       'on' || ''
     }}
-  PR_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-  PR_REF: ${{ github.event.pull_request.head.sha || github.sha }}
-  ALLOW_UNSAFE_PR_CHECKOUT: ${{ github.event_name == 'pull_request_target' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login == 'dependabot[bot]') }}
+  # Always check out the base repository's generated merge ref. This keeps
+  # target jobs from fetching a fork ref and lets checkout retain its safety
+  # checks on every event.
+  PR_REPOSITORY: ${{ github.repository }}
+  PR_REF: ${{ (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.sha }}
+  ALLOW_UNSAFE_PR_CHECKOUT: 'false'
 
 jobs:
   tests:
     name: CI Test Suite
-    if: "(github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test')"
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
+      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     uses: "./.github/workflows/tests.yaml"
 
   test-aws-lc-rs:
     name: Test aws-lc-rs crypto backend
-    if: "(github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test')"
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
+      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 30
     runs-on: ubuntu-latest
     env:
@@ -78,7 +93,10 @@ jobs:
 
   test_posix_minimal:
     name: Test posix_minimal (noq-udp)
-    if: "(github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test')"
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
+      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 30
     runs-on: ubuntu-latest
     env:
@@ -98,7 +116,10 @@ jobs:
 
   esp32_check:
     name: ESP32-C3 build check (noq-udp, noq-proto, noq)
-    if: "(github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test')"
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
+      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 30
     runs-on: ubuntu-latest
     env:
@@ -122,10 +143,16 @@ jobs:
     if: >-
       github.repository == 'manaflow-ai/noq' &&
       github.event_name != 'merge_group' &&
-      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 30
-    runs-on: [self-hosted, linux, X64]
+    # Fork and merge-group code always uses a fresh hosted runner. Only the
+    # trusted target and push lanes retain the persistent runner.
+    runs-on: >-
+      ${{
+        (github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+        'ubuntu-latest' || fromJSON('["self-hosted","linux","X64"]')
+      }}
     env:
       CC_wasm32_unknown_unknown: clang
       AR_wasm32_unknown_unknown: llvm-ar
@@ -136,6 +163,7 @@ jobs:
           repository: ${{ env.PR_REPOSITORY }}
           ref: ${{ env.PR_REF }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ env.ALLOW_UNSAFE_PR_CHECKOUT }}
 
       - name: Install LLVM tools for wasm
         run: |
@@ -178,10 +206,14 @@ jobs:
     if: >-
       github.repository == 'manaflow-ai/noq' &&
       github.event_name != 'merge_group' &&
-      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 30
-    runs-on: [self-hosted, linux, X64]
+    runs-on: >-
+      ${{
+        (github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+        'ubuntu-latest' || fromJSON('["self-hosted","linux","X64"]')
+      }}
     strategy:
       fail-fast: false
       matrix:
@@ -195,6 +227,7 @@ jobs:
           repository: ${{ env.PR_REPOSITORY }}
           ref: ${{ env.PR_REF }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ env.ALLOW_UNSAFE_PR_CHECKOUT }}
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
@@ -240,10 +273,14 @@ jobs:
     if: >-
       github.repository == 'manaflow-ai/noq' &&
       github.event_name != 'merge_group' &&
-      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 45
-    runs-on: [self-hosted, linux, X64]
+    runs-on: >-
+      ${{
+        (github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+        'ubuntu-latest' || fromJSON('["self-hosted","linux","X64"]')
+      }}
     strategy:
       fail-fast: false
       matrix:
@@ -316,7 +353,10 @@ jobs:
 
   fuzz_build:
     name: Fuzz build check
-    if: "(github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test')"
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
+      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
@@ -335,6 +375,9 @@ jobs:
   check_fmt:
     timeout-minutes: 30
     name: Checking fmt
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ubuntu-latest
     env:
       RUSTC_WRAPPER: "sccache"
@@ -355,6 +398,9 @@ jobs:
   check_docs:
     timeout-minutes: 30
     name: Checking docs
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ubuntu-latest
     env:
       RUSTC_WRAPPER: "sccache"
@@ -383,6 +429,9 @@ jobs:
   clippy_check:
     timeout-minutes: 30
     name: Clippy
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ubuntu-latest
     env:
       RUSTC_WRAPPER: "sccache"
@@ -409,7 +458,10 @@ jobs:
         run: cargo clippy --workspace --exclude fuzz --all-targets --lib --bins --tests --benches --examples -- -D warnings
 
   msrv:
-    if: "(github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test')"
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
+      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 30
     name: Minimal Supported Rust Version
     runs-on: ubuntu-latest
@@ -433,6 +485,9 @@ jobs:
           cargo +$MSRV check --workspace --exclude fuzz --all-targets
 
   external_types:
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ubuntu-latest
     env:
       RUSTC_WRAPPER: "sccache"
@@ -465,6 +520,9 @@ jobs:
   cargo_deny:
     timeout-minutes: 30
     name: cargo deny
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -481,6 +539,9 @@ jobs:
 
   codespell:
     timeout-minutes: 30
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -505,8 +566,12 @@ jobs:
     if: >-
       github.repository == 'manaflow-ai/noq' &&
       github.event_name != 'merge_group' &&
-      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
-    runs-on: [self-hosted, linux, X64]
+      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+    runs-on: >-
+      ${{
+        github.event_name == 'pull_request' && 'ubuntu-latest' ||
+        fromJSON('["self-hosted","linux","X64"]')
+      }}
     env:
       RUSTC_WRAPPER: "sccache"
     steps:
@@ -516,12 +581,14 @@ jobs:
           repository: ${{ env.PR_REPOSITORY }}
           ref: ${{ env.PR_REF }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ env.ALLOW_UNSAFE_PR_CHECKOUT }}
       - name: Install sccache
         uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
       # Go is required for FIPS builds
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: "stable"
+          cache: false
 
       - name: Select semver baseline
         id: semver_baseline
