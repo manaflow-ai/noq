@@ -43,6 +43,7 @@ jobs:
     name: Build ${{ matrix.impl }} perf
     if: >-
       github.repository == 'manaflow-ai/noq' &&
+      github.event_name != 'merge_group' &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: [self-hosted, linux, X64]
     timeout-minutes: 30
@@ -102,6 +103,7 @@ jobs:
     name: Raw perf ${{ matrix.impl }}
     if: >-
       github.repository == 'manaflow-ai/noq' &&
+      github.event_name != 'merge_group' &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     needs: build
     runs-on: [self-hosted, linux, X64]
@@ -145,6 +147,7 @@ jobs:
     name: Netsim perf ${{ matrix.impl }}
     if: >-
       github.repository == 'manaflow-ai/noq' &&
+      github.event_name != 'merge_group' &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     needs: build
     runs-on: [self-hosted, linux, X64]
@@ -229,6 +232,7 @@ jobs:
     if: >-
       always() &&
       github.repository == 'manaflow-ai/noq' &&
+      github.event_name != 'merge_group' &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     permissions:
       contents: read

@@ -48,6 +48,7 @@ jobs:
       - name: Upload coverage to Codecov
         if: >-
           github.repository == 'manaflow-ai/noq' &&
+          github.event_name != 'merge_group' &&
           ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac
         with:

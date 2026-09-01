@@ -37,6 +37,7 @@ jobs:
     name: "Tests"
     if: >-
       github.repository == 'manaflow-ai/noq' &&
+      github.event_name != 'merge_group' &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -171,6 +172,7 @@ jobs:
     name: "Tests"
     if: >-
       github.repository == 'manaflow-ai/noq' &&
+      github.event_name != 'merge_group' &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -345,6 +347,7 @@ jobs:
     timeout-minutes: 45
     if: >-
       github.repository == 'manaflow-ai/noq' &&
+      github.event_name != 'merge_group' &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -384,6 +387,7 @@ jobs:
     name: "Minimal Crates (Windows)"
     if: >-
       github.repository == 'manaflow-ai/noq' &&
+      github.event_name != 'merge_group' &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ${{ matrix.runner }}
     strategy:
