@@ -29,6 +29,9 @@ env:
 jobs:
   build:
     name: Build ${{ matrix.impl }} perf
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, linux, X64]
     timeout-minutes: 30
     strategy:
@@ -75,6 +78,9 @@ jobs:
 
   raw-perf:
     name: Raw perf ${{ matrix.impl }}
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     needs: build
     runs-on: [self-hosted, linux, X64]
     timeout-minutes: 30
@@ -109,6 +115,9 @@ jobs:
 
   netsim-perf:
     name: Netsim perf ${{ matrix.impl }}
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     needs: build
     runs-on: [self-hosted, linux, X64]
     timeout-minutes: 30
@@ -248,7 +257,7 @@ jobs:
           fi
 
       - name: Find existing comment
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: peter-evans/find-comment@v3
         id: find-comment
         with:
@@ -257,7 +266,7 @@ jobs:
           body-includes: '<!-- perf-report -->'
 
       - name: Create new PR comment
-        if: github.event_name == 'pull_request' && steps.find-comment.outputs.comment-id == ''
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && steps.find-comment.outputs.comment-id == ''
         uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ github.event.pull_request.number }}
@@ -273,7 +282,7 @@ jobs:
             </details>
 
       - name: Update existing PR comment
-        if: github.event_name == 'pull_request' && steps.find-comment.outputs.comment-id != ''
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && steps.find-comment.outputs.comment-id != ''
         uses: peter-evans/create-or-update-comment@v5
         with:
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
@@ -287,4 +296,3 @@ jobs:
             ${{ steps.compare.outputs.COMPARISON }}
 
             </details>
-

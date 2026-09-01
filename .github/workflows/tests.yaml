@@ -30,6 +30,9 @@ jobs:
   build_and_test_nix:
     timeout-minutes: 30
     name: "Tests"
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -59,7 +62,7 @@ jobs:
           ref: ${{ inputs.git-ref }}
 
       - name: Install ${{ matrix.rust }} rust
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: ${{ matrix.rust }}
 
@@ -159,6 +162,9 @@ jobs:
   build_and_test_windows:
     timeout-minutes: 30
     name: "Tests"
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -260,7 +266,8 @@ jobs:
           echo "C:\Strawberry\c\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Install cmake
-        uses: lukka/get-cmake@latest
+        # Pin the installer commit. The latest tag is mutable.
+        uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb
 
       # Install LLVM for libclang (required by bindgen for aws-lc-fips-sys)
       - name: Cache LLVM
@@ -327,6 +334,9 @@ jobs:
 
   minimal-crates:
     timeout-minutes: 45
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -359,6 +369,9 @@ jobs:
   minimal-crates-windows:
     timeout-minutes: 30
     name: "Minimal Crates (Windows)"
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -397,7 +410,8 @@ jobs:
           release: false
 
       - name: Install cmake
-        uses: lukka/get-cmake@latest
+        # Pin the installer commit. The latest tag is mutable.
+        uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb
 
       - name: Install NASM
         uses: ilammy/setup-nasm@v1

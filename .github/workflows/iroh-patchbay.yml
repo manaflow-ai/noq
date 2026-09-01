@@ -21,6 +21,9 @@ jobs:
   iroh_patchbay:
     name: iroh patchbay
     timeout-minutes: 30
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, linux, X64]
     env:
       RUSTC_WRAPPER: "sccache"

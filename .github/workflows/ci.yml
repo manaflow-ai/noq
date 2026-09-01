@@ -83,7 +83,10 @@ jobs:
 
   wasm_test:
     name: Build & test wasm32
-    if: "github.event_name != 'pull_request' || ! contains(github.event.pull_request.labels.*.name, 'flaky-test')"
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name != 'pull_request' || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 30
     runs-on: [self-hosted, linux, X64]
     env:
@@ -131,7 +134,10 @@ jobs:
 
   android_build:
     name: Android Build Only
-    if: "github.event_name != 'pull_request' || ! contains(github.event.pull_request.labels.*.name, 'flaky-test')"
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name != 'pull_request' || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 30
     runs-on: [self-hosted, linux, X64]
     strategy:
@@ -162,7 +168,8 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Setup Android NDK
-        uses: arqu/setup-ndk@main
+        # Pin the installer commit. The branch is mutable.
+        uses: arqu/setup-ndk@4f8a02c22e2c17ff9ebba9026e599da847aa8374
         id: setup-ndk
         with:
           ndk-version: r23
@@ -181,7 +188,10 @@ jobs:
 
   android_emulator_test:
     name: Android Emulator Tests
-    if: "github.event_name != 'pull_request' || ! contains(github.event.pull_request.labels.*.name, 'flaky-test')"
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name != 'pull_request' || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 45
     runs-on: [self-hosted, linux, X64]
     strategy:
@@ -214,7 +224,8 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Setup Android NDK
-        uses: arqu/setup-ndk@main
+        # Pin the installer commit. The branch is mutable.
+        uses: arqu/setup-ndk@4f8a02c22e2c17ff9ebba9026e599da847aa8374
         id: setup-ndk
         with:
           ndk-version: r23
@@ -335,7 +346,7 @@ jobs:
       SCCACHE_GHA_ENABLED: "on"
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: ${{ env.MSRV }}
       - name: Install sccache
@@ -356,7 +367,7 @@ jobs:
       TOOLCHAIN: "nightly-2025-10-18"
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: ${{ env.TOOLCHAIN }}
       - name: Install sccache
@@ -395,6 +406,9 @@ jobs:
       - run: codespell --ignore-words-list=ans,atmost,crate,ect,inout,keep-alives,ser,te,worl --skip=CHANGELOG.md,*.lock
 
   check_semver:
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, linux, X64]
     env:
       RUSTC_WRAPPER: "sccache"
@@ -422,7 +436,8 @@ jobs:
           echo "HEAD_COMMIT_SHA=$(git rev-parse origin/main)" >> ${GITHUB_ENV}
       - name: Check semver
         # uses: obi1kenobi/cargo-semver-checks-action@v2
-        uses: n0-computer/cargo-semver-checks-action@feat-baseline
+        # Pin the in-org action branch to an immutable commit.
+        uses: n0-computer/cargo-semver-checks-action@b49de9133f8849bb51cae32c6bdeb19a5c37e61f
         with:
           package: noq, noq-proto, noq-udp
           baseline-rev: ${{ env.HEAD_COMMIT_SHA }}

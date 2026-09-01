@@ -7,6 +7,8 @@ on:
 
 jobs:
   coverage:
+    permissions:
+      contents: read
     timeout-minutes: 5
     strategy:
       fail-fast: false
@@ -33,6 +35,9 @@ jobs:
             --features="arbitrary,aws-lc-rs,bloom,fast-apple-datapath,futures-io,json-output,lock_tracking,log,platform-verifier,qlog,ring,runtime-smol,runtime-tokio,rustls,rustls-log,rustls,ring,serde,serde_json,tracing,tracing-log" \
             --workspace --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
+        if: >-
+          github.repository == 'manaflow-ai/noq' &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
