@@ -9,6 +9,8 @@ on:
 # Coverage runs fork code on a hosted runner with read-only permissions. The
 # upload step is restricted to same-repository pull requests.
 
+permissions: {}
+
 jobs:
   coverage:
     permissions:
