@@ -28,9 +28,11 @@ env:
   MSRV: "1.88"
   SCCACHE_CACHE_SIZE: "10G"
   # Do not let fork or Dependabot code write the default-branch compiler cache.
-  # Same-repository PRs, pushes, and merge queues retain the existing cache.
+  # Same-repository PRs and pushes retain the existing cache. Merge groups run
+  # synthetic PR code, so they use the same cache policy as external PRs.
   SCCACHE_GHA_ENABLED: >-
     ${{
+      github.event_name != 'merge_group' &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
         (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
       'on' || ''
@@ -489,8 +491,9 @@ jobs:
           allow-unsafe-pr-checkout: ${{ env.ALLOW_UNSAFE_PR_CHECKOUT }}
       - name: Cache pip
         if: >-
-          (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
-          (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')
+          github.event_name != 'merge_group' &&
+          ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+            (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ~/.cache/pip
