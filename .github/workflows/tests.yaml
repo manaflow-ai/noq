@@ -20,6 +20,10 @@ on:
         description: "Which git ref to checkout"
         type: string
         default: ""
+      hosted_only:
+        description: "Run untrusted PR validation on GitHub-hosted runners only"
+        type: boolean
+        default: false
 
 env:
   RUST_BACKTRACE: 1
@@ -28,11 +32,12 @@ env:
   SCCACHE_CACHE_SIZE: "10G"
   CRATES_LIST: "noq,noq-proto,noq-udp"
   NEXTEST_VERSION: "0.9.80"
-  # Both PR events use the base repository's generated merge ref. This keeps
-  # the target lane from checking out a fork and tests the merge result.
+  # The caller is base-controlled. Fork validation opts into checkout of the
+  # merge ref only while all jobs use fresh GitHub-hosted runners and the
+  # workflow has contents:read with no repository secrets.
   PR_REPOSITORY: ${{ github.repository }}
   PR_REF: ${{ inputs.git-ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.sha }}
-  ALLOW_UNSAFE_PR_CHECKOUT: 'false'
+  ALLOW_UNSAFE_PR_CHECKOUT: ${{ inputs.hosted_only && 'true' || 'false' }}
 
 jobs:
   build_and_test_nix:
@@ -40,7 +45,7 @@ jobs:
     name: "Tests"
     if: >-
       github.repository == 'manaflow-ai/noq' &&
-      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+      (inputs.hosted_only || github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ${{ fromJSON(matrix.runner) }}
     strategy:
       fail-fast: false
@@ -55,7 +60,7 @@ jobs:
             release-arch: amd64
             runner: >-
               ${{
-                (github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+                (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
                 '["ubuntu-latest"]' || '["self-hosted","linux","X64"]'
               }}
           - name: macOS-arm-latest
@@ -64,7 +69,7 @@ jobs:
             release-arch: aarch64
             runner: >-
               ${{
-                (github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+                (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
                 '["macos-latest"]' || '["self-hosted","macOS","ARM64"]'
               }}
     env:
@@ -183,7 +188,7 @@ jobs:
     name: "Tests"
     if: >-
       github.repository == 'manaflow-ai/noq' &&
-      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+      (inputs.hosted_only || github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ${{ fromJSON(matrix.runner) }}
     strategy:
       fail-fast: false
@@ -198,7 +203,7 @@ jobs:
             os: windows
             runner: >-
               ${{
-                (github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+                (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
                 '["windows-latest"]' || '["self-hosted","windows","x64"]'
               }}
     env:
@@ -366,7 +371,7 @@ jobs:
     timeout-minutes: 45
     if: >-
       github.repository == 'manaflow-ai/noq' &&
-      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+      (inputs.hosted_only || github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ${{ fromJSON(matrix.runner) }}
     strategy:
       fail-fast: false
@@ -379,7 +384,7 @@ jobs:
             release-arch: amd64
             runner: >-
               ${{
-                (github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+                (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
                 '["ubuntu-latest"]' || '["self-hosted","linux","X64"]'
               }}
           - name: macOS-arm-latest
@@ -388,7 +393,7 @@ jobs:
             release-arch: aarch64
             runner: >-
               ${{
-                (github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+                (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
                 '["macos-latest"]' || '["self-hosted","macOS","ARM64"]'
               }}
     steps:
@@ -414,7 +419,7 @@ jobs:
     name: "Minimal Crates (Windows)"
     if: >-
       github.repository == 'manaflow-ai/noq' &&
-      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+      (inputs.hosted_only || github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ${{ fromJSON(matrix.runner) }}
     strategy:
       fail-fast: false
@@ -428,7 +433,7 @@ jobs:
             os: windows
             runner: >-
               ${{
-                (github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+                (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
                 '["windows-latest"]' || '["self-hosted","windows","x64"]'
               }}
     env:

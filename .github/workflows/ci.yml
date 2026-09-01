@@ -1,12 +1,9 @@
 name: CI
 
 on:
-  # Keep required checks on the PR merge commit and the PR cache scope. The
-  # target trigger below is a separate, base-controlled lane for trusted jobs.
-  pull_request:
-    types: ["labeled", "unlabeled", "opened", "synchronize", "reopened"]
-  # The target workflow is used only for trusted same-repository jobs. Every
-  # target code job rejects forks and Dependabot before checkout.
+  # Keep this workflow base-controlled. GitHub evaluates pull_request_target
+  # from the base branch, so a fork cannot replace runner labels or add
+  # secret-bearing steps. External PRs are rejected before runner selection.
   pull_request_target:
     types: ["labeled", "unlabeled", "opened", "synchronize", "reopened"]
   merge_group:
@@ -22,8 +19,6 @@ permissions:
 # treats Dependabot pull requests as forked, so the same policy applies.
 
 concurrency:
-  # Keep pull_request and pull_request_target runs independent. Otherwise a
-  # skipped target run can cancel the required pull_request check.
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
@@ -58,6 +53,19 @@ jobs:
       (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     uses: "./.github/workflows/tests.yaml"
+
+  # This caller is evaluated from the base branch. The reusable workflow
+  # forces every matrix cell onto a fresh hosted runner and receives no secret,
+  # so fork code is never sent to the persistent pool.
+  fork_validation:
+    name: Fork validation (hosted)
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      github.event_name == 'pull_request_target' &&
+      (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login == 'dependabot[bot]')
+    uses: "./.github/workflows/tests.yaml"
+    with:
+      hosted_only: true
 
   test-aws-lc-rs:
     name: Test aws-lc-rs crypto backend

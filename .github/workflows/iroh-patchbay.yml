@@ -1,10 +1,8 @@
 name: iroh-patchbay
 
 on:
-  # Pull-request checks run on a hosted runner with the PR cache scope. The
-  # target trigger below is the base-controlled lane for trusted PRs.
-  pull_request:
-    types: [opened, synchronize, reopened]
+  # Keep this workflow base-controlled. External PRs are rejected before the
+  # self-hosted runner can be selected.
   pull_request_target:
     types: [opened, synchronize, reopened]
   merge_group:
@@ -29,6 +27,58 @@ permissions:
   contents: read
 
 jobs:
+  # Base-controlled hosted validation for fork PRs. The fork checkout is the
+  # only reviewed unsafe-checkout exception, and this job has no secrets or
+  # write permissions. The persistent runner job below remains trusted-only.
+  fork_validation:
+    name: iroh patchbay (hosted fork)
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      github.event_name == 'pull_request_target' &&
+      (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login == 'dependabot[bot]')
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout noq pull request merge
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: ${{ github.repository }}
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          persist-credentials: false
+          allow-unsafe-pr-checkout: true
+          path: noq
+      - name: Checkout iroh integration baseline
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: n0-computer/iroh
+          ref: 00e016afed8aef4db05b43ef728d52eee140316f
+          persist-credentials: false
+          path: iroh
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+      - name: Install cargo-make and cargo-nextest
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf
+        with:
+          tool: nextest@0.9.80,cargo-make
+      - name: Patch noq crates in iroh workspace
+        working-directory: iroh
+        run: |
+          mv Cargo.toml Cargo.toml.in
+          awk 'BEGIN { in_patch = 0 }; /\[patch\.crates-io\]/ { in_patch = 1 }; !in_patch { print }' Cargo.toml.in > Cargo.toml
+          cat >> Cargo.toml <<'EOF'
+
+          [patch.crates-io]
+          noq = { path = "../noq/noq" }
+          noq-proto = { path = "../noq/noq-proto" }
+          noq-udp = { path = "../noq/noq-udp" }
+          EOF
+      - name: Build and run patchbay tests
+        working-directory: iroh
+        run: |
+          cargo make patchbay --no-run
+          cargo make patchbay
+
   iroh_patchbay:
     name: iroh patchbay
     timeout-minutes: 30

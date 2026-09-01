@@ -1,10 +1,8 @@
 name: Performance Tests
 
 on:
-  # Pull-request build and raw benchmark jobs use a hosted runner and the PR
-  # cache scope. The target trigger remains the base-controlled trusted lane.
-  pull_request:
-    types: [opened, synchronize, reopened]
+  # Keep this workflow base-controlled. External PRs are rejected before any
+  # self-hosted benchmark runner can be selected.
   pull_request_target:
   push:
     branches:
