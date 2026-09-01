@@ -24,7 +24,13 @@ concurrency:
 env:
   RUST_BACKTRACE: 1
   RUSTFLAGS: -Dwarnings
-  SCCACHE_GHA_ENABLED: "true"
+  # Performance jobs are trusted-only, but keep the cache policy explicit.
+  SCCACHE_GHA_ENABLED: >-
+    ${{
+      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+        (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
+      'on' || ''
+    }}
   RUSTC_WRAPPER: "sccache"
   PR_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
   PR_REF: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -70,9 +76,15 @@ jobs:
 
       - name: Clone upstream quinn
         if: matrix.impl == 'upstream-quinn'
+        env:
+          QUINN_TAG: ${{ steps.quinn-release.outputs.tag }}
         run: |
+          if [[ -z "$QUINN_TAG" || "$QUINN_TAG" == -* ]] || ! git check-ref-format --branch "$QUINN_TAG"; then
+            echo "Invalid quinn release tag: $QUINN_TAG" >&2
+            exit 1
+          fi
           rm -rf /tmp/upstream-quinn
-          git clone --depth 1 --branch ${{ steps.quinn-release.outputs.tag }} \
+          git clone --depth 1 --branch "$QUINN_TAG" \
             https://github.com/quinn-rs/quinn.git /tmp/upstream-quinn
 
       - name: Build perf binary
@@ -116,10 +128,12 @@ jobs:
           path: ./bin
 
       - name: Run benchmarks
+        env:
+          PERF_IMPL: ${{ matrix.impl }}
         run: |
           PERF_BIN=$(ls ./bin/noq-perf ./bin/quinn-perf 2>/dev/null | head -1)
           chmod +x "$PERF_BIN"
-          ./.github/scripts/run_perf.sh "$PERF_BIN" results/${{ matrix.impl }}
+          ./.github/scripts/run_perf.sh "$PERF_BIN" "results/$PERF_IMPL"
 
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
         with:
@@ -182,15 +196,19 @@ jobs:
       - name: Run netsim perf test
         id: run_netsim
         continue-on-error: true
+        env:
+          PERF_IMPL: ${{ matrix.impl }}
         run: |
-          ./.github/scripts/run_netsim_perf.sh ${{ matrix.impl }} /tmp/chuck/netsim
+          ./.github/scripts/run_netsim_perf.sh "$PERF_IMPL" /tmp/chuck/netsim
 
       - name: Collect results
         if: always()
+        env:
+          PERF_IMPL: ${{ matrix.impl }}
         run: |
-          mkdir -p results/${{ matrix.impl }}
-          cp /tmp/chuck/netsim/report/*.json results/${{ matrix.impl }}/ 2>/dev/null || true
-          cp /tmp/chuck/netsim/logs/*.log results/${{ matrix.impl }}/ 2>/dev/null || true
+          mkdir -p "results/$PERF_IMPL"
+          cp /tmp/chuck/netsim/report/*.json "results/$PERF_IMPL/" 2>/dev/null || true
+          cp /tmp/chuck/netsim/logs/*.log "results/$PERF_IMPL/" 2>/dev/null || true
 
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
         if: always()
@@ -214,6 +232,7 @@ jobs:
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     permissions:
       contents: read
+      # The compare job posts the trusted benchmark report to the PR.
       pull-requests: write
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -250,9 +269,11 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Convert to Metro format
+        env:
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           python .github/scripts/perf_to_metro.py raw-results/ netsim-results/ \
-            --commit ${{ github.event.pull_request.head.sha || github.sha }} > metro.json
+            --commit "$COMMIT_SHA" > metro.json
 
       - name: Show results
         run: |
@@ -273,13 +294,16 @@ jobs:
 
       - name: Publish metrics to Metro
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          METRO_TOKEN: ${{ secrets.METRO_TOKEN }}
+          METRO_ENDPOINT: ${{ secrets.METRO_ENDPOINT }}
         run: |
-          if [[ -n "${{ secrets.METRO_TOKEN }}" && -n "${{ secrets.METRO_ENDPOINT }}" ]]; then
+          if [[ -n "$METRO_TOKEN" && -n "$METRO_ENDPOINT" ]]; then
             curl -X POST \
               -H "Content-Type: application/json" \
-              -H "Authorization: Bearer ${{ secrets.METRO_TOKEN }}" \
+              -H "Authorization: Bearer $METRO_TOKEN" \
               --data @metro.json \
-              "${{ secrets.METRO_ENDPOINT }}"
+              "$METRO_ENDPOINT"
           else
             echo "Metro secrets not configured, skipping publish"
           fi
