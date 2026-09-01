@@ -31,7 +31,8 @@ jobs:
   # only reviewed unsafe-checkout exception, and this job has no secrets or
   # write permissions. The persistent runner job below remains trusted-only.
   fork_validation:
-    name: iroh patchbay (hosted fork)
+    # Preserve the protected status-check context used by trusted runs.
+    name: iroh patchbay
     if: >-
       github.repository == 'manaflow-ai/noq' &&
       github.event_name == 'pull_request_target' &&
