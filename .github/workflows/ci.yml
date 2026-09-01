@@ -50,22 +50,17 @@ jobs:
     name: CI Test Suite
     if: >-
       github.repository == 'manaflow-ai/noq' &&
-      (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     uses: "./.github/workflows/tests.yaml"
-
-  # This caller is evaluated from the base branch. The reusable workflow
-  # forces every matrix cell onto a fresh hosted runner and receives no secret,
-  # so fork code is never sent to the persistent pool.
-  fork_validation:
-    name: Fork validation (hosted)
-    if: >-
-      github.repository == 'manaflow-ai/noq' &&
-      github.event_name == 'pull_request_target' &&
-      (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login == 'dependabot[bot]')
-    uses: "./.github/workflows/tests.yaml"
     with:
-      hosted_only: true
+      # Keep this job's stable check name for both trusted and external PRs.
+      # The reusable workflow switches every matrix cell to hosted runners for
+      # external and Dependabot sources.
+      hosted_only: >-
+        ${{
+          github.event_name == 'pull_request_target' &&
+          (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login == 'dependabot[bot]')
+        }}
 
   test-aws-lc-rs:
     name: Test aws-lc-rs crypto backend
