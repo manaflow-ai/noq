@@ -2,6 +2,9 @@
 
 name: Tests
 
+permissions:
+  contents: read
+
 on:
   workflow_call:
     inputs:
@@ -16,7 +19,7 @@ on:
       git-ref:
         description: "Which git ref to checkout"
         type: string
-        default: ${{ github.ref }}
+        default: ""
 
 env:
   RUST_BACKTRACE: 1
@@ -25,6 +28,8 @@ env:
   SCCACHE_CACHE_SIZE: "10G"
   CRATES_LIST: "noq,noq-proto,noq-udp"
   NEXTEST_VERSION: "0.9.80"
+  PR_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+  PR_REF: ${{ inputs.git-ref || github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   build_and_test_nix:
@@ -32,7 +37,7 @@ jobs:
     name: "Tests"
     if: >-
       github.repository == 'manaflow-ai/noq' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -59,7 +64,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: ${{ inputs.git-ref }}
+          repository: ${{ env.PR_REPOSITORY }}
+          ref: ${{ env.PR_REF }}
+          persist-credentials: false
 
       - name: Install ${{ matrix.rust }} rust
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
@@ -164,7 +171,7 @@ jobs:
     name: "Tests"
     if: >-
       github.repository == 'manaflow-ai/noq' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -188,7 +195,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: ${{ inputs.git-ref }}
+          repository: ${{ env.PR_REPOSITORY }}
+          ref: ${{ env.PR_REF }}
+          persist-credentials: false
 
       - name: Install ${{ matrix.rust }}
         run: |
@@ -336,7 +345,7 @@ jobs:
     timeout-minutes: 45
     if: >-
       github.repository == 'manaflow-ai/noq' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -355,6 +364,10 @@ jobs:
             runner: [self-hosted, macOS, ARM64]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: ${{ env.PR_REPOSITORY }}
+          ref: ${{ env.PR_REF }}
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@7c8d7d138f5c09cef361f8214cf96882cd029cdb
       - name: Install Go (required for aws-lc-rs FIPS)
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
@@ -371,7 +384,7 @@ jobs:
     name: "Minimal Crates (Windows)"
     if: >-
       github.repository == 'manaflow-ai/noq' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -394,7 +407,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: ${{ inputs.git-ref }}
+          repository: ${{ env.PR_REPOSITORY }}
+          ref: ${{ env.PR_REF }}
+          persist-credentials: false
 
       - name: Install Rust nightly
         run: |

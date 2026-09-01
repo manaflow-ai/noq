@@ -1,7 +1,9 @@
 name: iroh-patchbay
 
 on:
-  pull_request:
+  # Keep the workflow definition on the base branch before using a persistent
+  # self-hosted runner.
+  pull_request_target:
   merge_group:
   push:
     branches:
@@ -17,13 +19,16 @@ env:
   IROH_FORCE_STAGING_RELAYS: "1"
   NEXTEST_VERSION: "0.9.80"
 
+permissions:
+  contents: read
+
 jobs:
   iroh_patchbay:
     name: iroh patchbay
     timeout-minutes: 30
     if: >-
       github.repository == 'manaflow-ai/noq' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: [self-hosted, linux, X64]
     env:
       RUSTC_WRAPPER: "sccache"
@@ -35,6 +40,9 @@ jobs:
       - name: Checkout noq
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
           path: noq
 
       - name: Checkout iroh
