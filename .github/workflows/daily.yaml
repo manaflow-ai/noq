@@ -3,6 +3,9 @@
 
 name: Daily CI
 
+permissions:
+  contents: read
+
 on:
   schedule:
     # 06:00 UTC every day
@@ -27,6 +30,8 @@ jobs:
       RUSTC_WRAPPER: "sccache"
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
 
@@ -51,6 +56,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
       - name: test on freebsd
         uses: vmactions/freebsd-vm@f0552d3b69211736abd97f02ff3d4674c56b73b1
         with:
@@ -76,6 +83,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
       - name: build on Solaris
         uses: vmactions/solaris-vm@96d8d976f9e67d82ec6c7e8ce9c1060731f9e21c
         with:
@@ -101,6 +110,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
       - name: test on Illumos
         # pinned: v1 tag moves and builder v2.0.3+ ships a VM with broken DNS
         uses: vmactions/omnios-vm@4f4fcbf0847b079a6e0eafe6ff06b3d15510f0b0
@@ -148,6 +159,7 @@ jobs:
     timeout-minutes: 45
     needs: [proptests, test-freebsd, build-solaris, test-illumos, features]
     if: always() && github.repository == 'manaflow-ai/noq'
+    permissions: {}
     runs-on: ubuntu-latest
     steps:
       - name: Extract test results
