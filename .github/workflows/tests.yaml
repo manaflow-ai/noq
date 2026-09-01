@@ -2,6 +2,9 @@
 
 name: Tests
 
+permissions:
+  contents: read
+
 on:
   workflow_call:
     inputs:
@@ -16,7 +19,11 @@ on:
       git-ref:
         description: "Which git ref to checkout"
         type: string
-        default: ${{ github.ref }}
+        default: ""
+      hosted_only:
+        description: "Run untrusted PR validation on GitHub-hosted runners only"
+        type: boolean
+        default: false
 
 env:
   RUST_BACKTRACE: 1
@@ -25,12 +32,21 @@ env:
   SCCACHE_CACHE_SIZE: "10G"
   CRATES_LIST: "noq,noq-proto,noq-udp"
   NEXTEST_VERSION: "0.9.80"
+  # The caller is base-controlled. Fork validation opts into checkout of the
+  # merge ref only while all jobs use fresh GitHub-hosted runners and the
+  # workflow has contents:read with no repository secrets.
+  PR_REPOSITORY: ${{ github.repository }}
+  PR_REF: ${{ inputs.git-ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.sha }}
+  ALLOW_UNSAFE_PR_CHECKOUT: ${{ inputs.hosted_only && 'true' || 'false' }}
 
 jobs:
   build_and_test_nix:
     timeout-minutes: 30
     name: "Tests"
-    runs-on: ${{ matrix.runner }}
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (inputs.hosted_only || github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+    runs-on: ${{ fromJSON(matrix.runner) }}
     strategy:
       fail-fast: false
       matrix:
@@ -42,38 +58,49 @@ jobs:
             os: ubuntu-latest
             release-os: linux
             release-arch: amd64
-            runner: [self-hosted, linux, X64]
+            runner: >-
+              ${{
+                (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+                '["ubuntu-latest"]' || '["self-hosted","linux","X64"]'
+              }}
           - name: macOS-arm-latest
             os: macOS-latest
             release-os: darwin
             release-arch: aarch64
-            runner: [self-hosted, macOS, ARM64]
+            runner: >-
+              ${{
+                (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+                '["macos-latest"]' || '["self-hosted","macOS","ARM64"]'
+              }}
     env:
       # Using self-hosted runners so use local cache for sccache and
       # not SCCACHE_GHA_ENABLED.
       RUSTC_WRAPPER: "sccache"
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: ${{ inputs.git-ref }}
+          repository: ${{ env.PR_REPOSITORY }}
+          ref: ${{ env.PR_REF }}
+          persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ env.ALLOW_UNSAFE_PR_CHECKOUT }}
 
       - name: Install ${{ matrix.rust }} rust
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: ${{ matrix.rust }}
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf
         with:
           tool: nextest@${{ env.NEXTEST_VERSION }}
 
       - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
 
       # Go is required for FIPS builds (aws-lc-rs-fips feature)
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: "stable"
 
@@ -124,7 +151,7 @@ jobs:
 
       - name: upload results
         if: ${{ failure() && inputs.flaky }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
         with:
           name: libtest_run_${{ github.run_number }}-${{ github.run_attempt }}-${{ matrix.name }}_${{ matrix.features }}_${{ matrix.rust }}.json
           path: output
@@ -150,7 +177,7 @@ jobs:
             cargo test -p $i --doc $FEATURES
           done
 
-      - uses: taiki-e/install-action@cargo-make
+      - uses: taiki-e/install-action@a02c311696fe4e2cac5d6aef78eed5e93e7c0492
 
       - name: run proptests (1 minute minimum)
         if: ${{ ! inputs.flaky }}
@@ -159,7 +186,10 @@ jobs:
   build_and_test_windows:
     timeout-minutes: 30
     name: "Tests"
-    runs-on: ${{ matrix.runner }}
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (inputs.hosted_only || github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+    runs-on: ${{ fromJSON(matrix.runner) }}
     strategy:
       fail-fast: false
       matrix:
@@ -171,7 +201,11 @@ jobs:
         include:
           - name: windows-latest
             os: windows
-            runner: [self-hosted, windows, x64]
+            runner: >-
+              ${{
+                (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+                '["windows-latest"]' || '["self-hosted","windows","x64"]'
+              }}
     env:
       # Using self-hosted runners so use local cache for sccache and
       # not SCCACHE_GHA_ENABLED.
@@ -180,9 +214,12 @@ jobs:
       BINDGEN_EXTRA_CLANG_ARGS: "--target=x86_64-pc-windows-msvc"
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: ${{ inputs.git-ref }}
+          repository: ${{ env.PR_REPOSITORY }}
+          ref: ${{ env.PR_REF }}
+          persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ env.ALLOW_UNSAFE_PR_CHECKOUT }}
 
       - name: Install ${{ matrix.rust }}
         run: |
@@ -193,7 +230,11 @@ jobs:
 
       - name: Cache cargo-nextest
         id: cache-nextest
-        uses: actions/cache@v4
+        if: >-
+          github.event_name != 'merge_group' &&
+          ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+            (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ~/.cargo/bin/cargo-nextest.exe
           key: nextest-windows-${{ env.NEXTEST_VERSION }}
@@ -226,24 +267,29 @@ jobs:
           }
 
       - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
 
-      - uses: msys2/setup-msys2@v2
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
         with:
           release: false
 
       # FIPS dependencies for Windows
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: "stable"
 
       - name: Install NASM
-        uses: ilammy/setup-nasm@v1
+        uses: ilammy/setup-nasm@72793074d3c8cdda771dba85f6deafe00623038b
 
       - name: Cache Strawberry Perl
         id: cache-perl
-        uses: actions/cache@v4
+        # External target jobs must not write a shared base-branch cache.
+        if: >-
+          github.event_name != 'merge_group' &&
+          ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+            (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: C:\Strawberry
           key: strawberry-perl-5.38.2.2
@@ -260,12 +306,18 @@ jobs:
           echo "C:\Strawberry\c\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Install cmake
-        uses: lukka/get-cmake@latest
+        # Pin the installer commit. The latest tag is mutable.
+        uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb
 
       # Install LLVM for libclang (required by bindgen for aws-lc-fips-sys)
       - name: Cache LLVM
         id: cache-llvm
-        uses: actions/cache@v4
+        # External target jobs must not write a shared base-branch cache.
+        if: >-
+          github.event_name != 'merge_group' &&
+          ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+            (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: C:\Program Files\LLVM
           key: llvm-17.0.6-windows
@@ -283,7 +335,7 @@ jobs:
           echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Setup MSVC dev environment
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
 
       - name: build tests
         run: |
@@ -303,7 +355,7 @@ jobs:
 
       - name: upload results
         if: ${{ failure() && inputs.flaky }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
         with:
           name: libtest_run_${{ github.run_number }}-${{ github.run_attempt }}-${{ matrix.name }}_${{ matrix.features }}_${{ matrix.rust }}.json
           path: output
@@ -312,7 +364,12 @@ jobs:
 
       - name: Cache cargo-make
         id: cache-cargo-make
-        uses: actions/cache@v4
+        # External target jobs must not write a shared base-branch cache.
+        if: >-
+          github.event_name != 'merge_group' &&
+          ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+            (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ~/.cargo/bin/cargo-make.exe
           key: cargo-make-windows-0.37.24
@@ -327,7 +384,10 @@ jobs:
 
   minimal-crates:
     timeout-minutes: 45
-    runs-on: ${{ matrix.runner }}
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (inputs.hosted_only || github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+    runs-on: ${{ fromJSON(matrix.runner) }}
     strategy:
       fail-fast: false
       matrix:
@@ -337,17 +397,30 @@ jobs:
             os: ubuntu-latest
             release-os: linux
             release-arch: amd64
-            runner: [self-hosted, linux, X64]
+            runner: >-
+              ${{
+                (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+                '["ubuntu-latest"]' || '["self-hosted","linux","X64"]'
+              }}
           - name: macOS-arm-latest
             os: macOS-latest
             release-os: darwin
             release-arch: aarch64
-            runner: [self-hosted, macOS, ARM64]
+            runner: >-
+              ${{
+                (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+                '["macos-latest"]' || '["self-hosted","macOS","ARM64"]'
+              }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: ${{ env.PR_REPOSITORY }}
+          ref: ${{ env.PR_REF }}
+          persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ env.ALLOW_UNSAFE_PR_CHECKOUT }}
+      - uses: dtolnay/rust-toolchain@7c8d7d138f5c09cef361f8214cf96882cd029cdb
       - name: Install Go (required for aws-lc-rs FIPS)
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: "stable"
           cache: false
@@ -359,7 +432,10 @@ jobs:
   minimal-crates-windows:
     timeout-minutes: 30
     name: "Minimal Crates (Windows)"
-    runs-on: ${{ matrix.runner }}
+    if: >-
+      github.repository == 'manaflow-ai/noq' &&
+      (inputs.hosted_only || github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+    runs-on: ${{ fromJSON(matrix.runner) }}
     strategy:
       fail-fast: false
       matrix:
@@ -370,7 +446,11 @@ jobs:
         include:
           - name: windows-latest
             os: windows
-            runner: [self-hosted, windows, x64]
+            runner: >-
+              ${{
+                (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+                '["windows-latest"]' || '["self-hosted","windows","x64"]'
+              }}
     env:
       # Using self-hosted runners so use local cache for sccache and
       # not SCCACHE_GHA_ENABLED.
@@ -379,9 +459,12 @@ jobs:
       BINDGEN_EXTRA_CLANG_ARGS: "--target=x86_64-pc-windows-msvc"
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: ${{ inputs.git-ref }}
+          repository: ${{ env.PR_REPOSITORY }}
+          ref: ${{ env.PR_REF }}
+          persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ env.ALLOW_UNSAFE_PR_CHECKOUT }}
 
       - name: Install Rust nightly
         run: |
@@ -390,21 +473,27 @@ jobs:
           rustup set default-host ${{ matrix.target }}
 
       - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
 
-      - uses: msys2/setup-msys2@v2
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
         with:
           release: false
 
       - name: Install cmake
-        uses: lukka/get-cmake@latest
+        # Pin the installer commit. The latest tag is mutable.
+        uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb
 
       - name: Install NASM
-        uses: ilammy/setup-nasm@v1
+        uses: ilammy/setup-nasm@72793074d3c8cdda771dba85f6deafe00623038b
 
       - name: Cache Strawberry Perl
         id: cache-perl
-        uses: actions/cache@v4
+        # External target jobs must not write a shared base-branch cache.
+        if: >-
+          github.event_name != 'merge_group' &&
+          ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+            (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: C:\Strawberry
           key: strawberry-perl-5.38.2.2
@@ -421,7 +510,7 @@ jobs:
           echo "C:\Strawberry\c\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Install Go (required for aws-lc-rs FIPS)
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: "stable"
           cache: false
@@ -429,7 +518,12 @@ jobs:
       # Install LLVM for libclang (required by bindgen for aws-lc-fips-sys)
       - name: Cache LLVM
         id: cache-llvm
-        uses: actions/cache@v4
+        # External target jobs must not write a shared base-branch cache.
+        if: >-
+          github.event_name != 'merge_group' &&
+          ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+            (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: C:\Program Files\LLVM
           key: llvm-17.0.6-windows
@@ -448,7 +542,7 @@ jobs:
 
       # Set up MSVC environment to ensure clang/bindgen uses MSVC headers instead of mingw
       - name: Setup MSVC dev environment
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
 
       - name: cargo check
         run: |

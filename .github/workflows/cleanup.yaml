@@ -12,18 +12,21 @@ concurrency:
   group: cleanup-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   clean_docs_branch:
     timeout-minutes: 45
     permissions:
-      issues: write
       contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: generated-docs-preview
+          # This trusted maintenance job pushes the cleaned branch.
+          persist-credentials: true
 
       - name: Clean docs branch
         run: |
