@@ -53,7 +53,7 @@ jobs:
     # use https://github.com/vmactions/freebsd-vm for now
     timeout-minutes: 45
     name: test on freebsd
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -80,7 +80,7 @@ jobs:
     # Tests disabled - too many hang in poll() on Solaris
     timeout-minutes: 45
     name: build on solaris
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -107,7 +107,7 @@ jobs:
   test-illumos:
     timeout-minutes: 45
     name: test on illumos
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -162,7 +162,7 @@ jobs:
     needs: [proptests, test-freebsd, build-solaris, test-illumos, features]
     if: always() && github.repository == 'manaflow-ai/noq'
     permissions: {}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Extract test results
         run: |

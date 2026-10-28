@@ -55,7 +55,7 @@ jobs:
         features: [all, none, default]
         include:
           - name: ubuntu-latest
-            os: ubuntu-latest
+            os: blacksmith-4vcpu-ubuntu-2404
             release-os: linux
             release-arch: amd64
             runner: >-
@@ -394,7 +394,7 @@ jobs:
         name: [ubuntu-latest, macOS-arm-latest]
         include:
           - name: ubuntu-latest
-            os: ubuntu-latest
+            os: blacksmith-4vcpu-ubuntu-2404
             release-os: linux
             release-arch: amd64
             runner: >-

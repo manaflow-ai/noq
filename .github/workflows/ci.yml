@@ -69,7 +69,7 @@ jobs:
       (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 30
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       RUSTC_WRAPPER: "sccache"
     steps:
@@ -101,7 +101,7 @@ jobs:
       (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 30
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       RUSTC_WRAPPER: "sccache"
       RUSTFLAGS: "-Dwarnings --cfg posix_minimal"
@@ -124,7 +124,7 @@ jobs:
       (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 30
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       RUSTC_WRAPPER: "sccache"
     steps:
@@ -361,7 +361,7 @@ jobs:
       (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) &&
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 30
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -381,7 +381,7 @@ jobs:
     if: >-
       github.repository == 'manaflow-ai/noq' &&
       (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       RUSTC_WRAPPER: "sccache"
     steps:
@@ -404,7 +404,7 @@ jobs:
     if: >-
       github.repository == 'manaflow-ai/noq' &&
       (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       RUSTC_WRAPPER: "sccache"
       RUSTDOCFLAGS: -Dwarnings
@@ -435,7 +435,7 @@ jobs:
     if: >-
       github.repository == 'manaflow-ai/noq' &&
       (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       RUSTC_WRAPPER: "sccache"
     steps:
@@ -467,7 +467,7 @@ jobs:
       ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || ! contains(github.event.pull_request.labels.*.name, 'flaky-test'))
     timeout-minutes: 30
     name: Minimal Supported Rust Version
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       RUSTC_WRAPPER: "sccache"
     steps:
@@ -491,7 +491,7 @@ jobs:
     if: >-
       github.repository == 'manaflow-ai/noq' &&
       (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       RUSTC_WRAPPER: "sccache"
       # Pin to the nightly that the pinned `cargo-check-external-types`
@@ -526,7 +526,7 @@ jobs:
     if: >-
       github.repository == 'manaflow-ai/noq' &&
       (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -545,7 +545,7 @@ jobs:
     if: >-
       github.repository == 'manaflow-ai/noq' &&
       (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
