@@ -154,7 +154,7 @@ jobs:
     runs-on: >-
       ${{
         (github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
-        'ubuntu-latest' || fromJSON('["self-hosted","linux","X64"]')
+        'blacksmith-4vcpu-ubuntu-2404' || 'blacksmith-4vcpu-ubuntu-2404'
       }}
     env:
       CC_wasm32_unknown_unknown: clang
@@ -215,7 +215,7 @@ jobs:
     runs-on: >-
       ${{
         (github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
-        'ubuntu-latest' || fromJSON('["self-hosted","linux","X64"]')
+        'blacksmith-4vcpu-ubuntu-2404' || 'blacksmith-4vcpu-ubuntu-2404'
       }}
     strategy:
       fail-fast: false
@@ -282,7 +282,7 @@ jobs:
     runs-on: >-
       ${{
         (github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
-        'ubuntu-latest' || fromJSON('["self-hosted","linux","X64"]')
+        'blacksmith-4vcpu-ubuntu-2404' || 'blacksmith-4vcpu-ubuntu-2404'
       }}
     strategy:
       fail-fast: false
@@ -572,8 +572,8 @@ jobs:
       (github.event_name != 'pull_request_target' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: >-
       ${{
-        github.event_name == 'pull_request' && 'ubuntu-latest' ||
-        fromJSON('["self-hosted","linux","X64"]')
+        github.event_name == 'pull_request' && 'blacksmith-4vcpu-ubuntu-2404' ||
+        'blacksmith-4vcpu-ubuntu-2404'
       }}
     env:
       RUSTC_WRAPPER: "sccache"

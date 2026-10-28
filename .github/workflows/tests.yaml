@@ -61,7 +61,7 @@ jobs:
             runner: >-
               ${{
                 (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
-                '["ubuntu-latest"]' || '["self-hosted","linux","X64"]'
+                '["blacksmith-4vcpu-ubuntu-2404"]' || '["blacksmith-4vcpu-ubuntu-2404"]'
               }}
           - name: macOS-arm-latest
             os: macOS-latest
@@ -70,7 +70,7 @@ jobs:
             runner: >-
               ${{
                 (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
-                '["macos-latest"]' || '["self-hosted","macOS","ARM64"]'
+                '["blacksmith-6vcpu-macos-15"]' || '["blacksmith-6vcpu-macos-15"]'
               }}
     env:
       # Using self-hosted runners so use local cache for sccache and
@@ -204,7 +204,7 @@ jobs:
             runner: >-
               ${{
                 (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
-                '["windows-latest"]' || '["self-hosted","windows","x64"]'
+                '["blacksmith-4vcpu-windows-2025"]' || '["blacksmith-4vcpu-windows-2025"]'
               }}
     env:
       # Using self-hosted runners so use local cache for sccache and
@@ -400,7 +400,7 @@ jobs:
             runner: >-
               ${{
                 (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
-                '["ubuntu-latest"]' || '["self-hosted","linux","X64"]'
+                '["blacksmith-4vcpu-ubuntu-2404"]' || '["blacksmith-4vcpu-ubuntu-2404"]'
               }}
           - name: macOS-arm-latest
             os: macOS-latest
@@ -409,7 +409,7 @@ jobs:
             runner: >-
               ${{
                 (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
-                '["macos-latest"]' || '["self-hosted","macOS","ARM64"]'
+                '["blacksmith-6vcpu-macos-15"]' || '["blacksmith-6vcpu-macos-15"]'
               }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -449,7 +449,7 @@ jobs:
             runner: >-
               ${{
                 (inputs.hosted_only || github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
-                '["windows-latest"]' || '["self-hosted","windows","x64"]'
+                '["blacksmith-4vcpu-windows-2025"]' || '["blacksmith-4vcpu-windows-2025"]'
               }}
     env:
       # Using self-hosted runners so use local cache for sccache and
